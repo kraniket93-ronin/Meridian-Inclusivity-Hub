@@ -64,9 +64,15 @@ Real: the database, the workflow state machine, role rules, the review and verif
 audit trail, the deterministic scan worker (it writes new finding rows), the reset.
 
 Simulated and labelled as such in the UI: the detection engines (no live accessibility
-scanner runs), and the LLM adapter (`mock-deterministic`; a real provider would be wired
-in behind `LLM_API_KEY`). Every finding is a synthetic MAE Golden Set v0.1 record and no
-label has been reviewed by a human.
+scanner runs). Every finding is a synthetic MAE Golden Set v0.1 record and no label has
+been reviewed by a human.
+
+The agent's Diagnoser and Remediator call Gemini when `GEMINI_API_KEY` is set, and fall
+back to rule-backed text when it is not. Each run records its `provider` and `model`, and
+each step records why it fell back, so model output is never mistaken for rule output.
+The model writes the narrative and the fix; it never sets the finding type, the criteria,
+the severity, the confidence or the gate — those come from the deterministic rule engine,
+which is what keeps the over-claim rate meaningful.
 
 ## Prototype boundary worth knowing before anyone demos it
 

@@ -8,6 +8,8 @@ import { validateAndGuard, guardFinding, type FindingDraft, type GuardResult } f
 import type { RuleResult } from "./rules";
 import { diagnose, planTests, remediate, type TestPlan } from "./subagents";
 import { callTool, type PolicyChunk, type SignalSummary, type ToolName } from "./tools";
+import { diagnosisDescription, mergeDiagnosis, mergeRemediation, type AgentModel } from "./model";
+import type { FewShotExample } from "./prompts";
 
 export interface RunOptions {
   journey: "onboarding" | "dispute_filing";
@@ -18,11 +20,13 @@ export interface RunOptions {
   stepCap: number;
   /** Wall-clock budget. A run that exceeds it halts and says so. */
   timeBudgetMs: number;
+  /** Writes the narrative. Falls back to rule-backed text whenever it cannot. */
+  model: AgentModel;
 }
 
 // Sized so a six-screen journey finishes inside the caps; the caps still bind, and a run
 // that hits one halts and says which.
-export const DEFAULT_RUN_OPTIONS: Omit<RunOptions, "journey" | "platform" | "requestedBy"> = {
+export const DEFAULT_RUN_OPTIONS: Omit<RunOptions, "journey" | "platform" | "requestedBy" | "model"> = {
   buildId: "v3",
   maxScreens: 6,
   stepCap: 140,
@@ -48,7 +52,15 @@ export interface RunOutcome {
   steps: StepRecord[];
   drafts: { findingId: string; title: string; verdict: GuardResult["verdict"] }[];
   rejected: { title: string; reasons: string[] }[];
-  counters: { steps: number; toolCalls: number; drafted: number; escalations: number; rejections: number };
+  counters: {
+    steps: number;
+    toolCalls: number;
+    drafted: number;
+    escalations: number;
+    rejections: number;
+    modelCalls: number;
+    modelFallbacks: number;
+  };
   plan: TestPlan | null;
 }
 
@@ -103,6 +115,9 @@ export async function runBuildScan(
   let seq = 0;
   let toolCalls = 0;
   let escalations = 0;
+  let modelCalls = 0;
+  let modelFallbacks = 0;
+  let fewShot: FewShotExample[] = [];
   let halted: string | null = null;
 
   const log = async (step: Omit<StepRecord, "seq">): Promise<StepRecord> => {
@@ -189,7 +204,21 @@ export async function runBuildScan(
       return finish("halted", "Guard canary was not refused; the safety layer is not working.");
     }
 
-    // 3. Walk the journey once as a screen-reader persona.
+    // 3. Few-shot examples, train split only. The ids are logged, so a reader can check
+    //    afterwards that no dev or test row ever reached a prompt.
+    const examples = await call(
+      "get_training_examples",
+      { limit: 3 },
+      "diagnoser",
+      "plan",
+      "Load worked examples from the train split",
+    );
+    if (examples.ok) {
+      const payload = examples.output as { examples?: FewShotExample[]; ids?: string[] };
+      fewShot = payload.examples ?? [];
+    }
+
+    // 4. Walk the journey once as a screen-reader persona.
     const traceResult = await call(
       "simulate_screen_reader",
       { journey: options.journey, platform: options.platform, buildId: options.buildId },
@@ -256,20 +285,36 @@ export async function runBuildScan(
         );
         const chunks = policy.ok ? ((policy.output as { chunks: PolicyChunk[] }).chunks ?? []) : [];
 
-        const fix = remediate(rule.ruleId);
+        // Remediator: the model refines the rule-backed fix, or the rule-backed fix stands.
+        const ruleFix = remediate(rule.ruleId);
+        const remediation = await options.model.remediate(
+          {
+            rule,
+            screenId: screen.screenId,
+            stepName: screen.stepName,
+            platform: options.platform,
+            fallback: ruleFix,
+          },
+          fewShot,
+        );
+        modelCalls += remediation.meta.provider === "deterministic" ? 0 : 1;
+        if (remediation.meta.fellBackBecause) modelFallbacks += 1;
+        const fix = remediation.output ? mergeRemediation(ruleFix, remediation.output) : ruleFix;
         await log({
           phase: "remediate",
           actor: "remediator",
           tool: null,
           summary: `Fix drafted for ${rule.ruleId}`,
-          input: { ruleId: rule.ruleId },
-          output: fix,
-          verdict: "ok",
-          message: "Suggested only — never auto-applied.",
-          durationMs: 0,
+          input: { ruleId: rule.ruleId, provider: remediation.meta.provider, model: remediation.meta.model },
+          output: { ...fix, meta: remediation.meta },
+          verdict: remediation.meta.fellBackBecause ? "skipped" : "ok",
+          message: remediation.meta.fellBackBecause
+            ? `Rule-backed fix used: ${remediation.meta.fellBackBecause}`
+            : "Model-written, suggested only — never auto-applied.",
+          durationMs: remediation.meta.latencyMs,
         });
 
-        const draft: FindingDraft = diagnose({
+        const baseDraft: FindingDraft = diagnose({
           rule,
           screenId: screen.screenId,
           journey: options.journey,
@@ -279,6 +324,42 @@ export async function runBuildScan(
           signals: signalCache.get(screen.stepNo) ?? null,
           trace,
           fix,
+        });
+
+        // Diagnoser: the model writes the narrative. mergeDiagnosis carries every
+        // classification field through untouched, whatever the model returned.
+        const diagnosis = await options.model.diagnose(
+          {
+            rule,
+            screenId: screen.screenId,
+            journey: options.journey,
+            stepNo: screen.stepNo,
+            stepName: screen.stepName,
+            platform: options.platform,
+            signals: signalCache.get(screen.stepNo) ?? null,
+            trace,
+            chunks,
+          },
+          fewShot,
+        );
+        modelCalls += diagnosis.meta.provider === "deterministic" ? 0 : 1;
+        if (diagnosis.meta.fellBackBecause) modelFallbacks += 1;
+        const draft: FindingDraft = diagnosis.output
+          ? mergeDiagnosis(baseDraft, diagnosis.output, rule)
+          : baseDraft;
+        const description = diagnosis.output ? diagnosisDescription(diagnosis.output) : null;
+        await log({
+          phase: "diagnose",
+          actor: "diagnoser",
+          tool: null,
+          summary: `Finding written for ${rule.ruleId}`,
+          input: { provider: diagnosis.meta.provider, model: diagnosis.meta.model, promptVersion: diagnosis.meta.promptVersion },
+          output: { title: draft.title, description, meta: diagnosis.meta },
+          verdict: diagnosis.meta.fellBackBecause ? "skipped" : "ok",
+          message: diagnosis.meta.fellBackBecause
+            ? `Rule-backed text used: ${diagnosis.meta.fellBackBecause}`
+            : "Classification carried from the rule engine; the model wrote the narrative only.",
+          durationMs: diagnosis.meta.latencyMs,
         });
 
         const guardStart = Date.now();
@@ -309,6 +390,7 @@ export async function runBuildScan(
             screenId: screen.screenId,
             payload: {
               ...draft,
+              description,
               golden_set_id: `${rule.ruleId}@${screen.screenId}`,
               rule_id: rule.ruleId,
               wcag: (draft.wcag_criteria ?? []).join(", "),
@@ -365,6 +447,8 @@ export async function runBuildScan(
         drafted: drafts.length,
         escalations,
         rejections: rejected.length,
+        modelCalls,
+        modelFallbacks,
       },
       plan: null,
     };

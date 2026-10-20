@@ -66,8 +66,14 @@ violation. That is the case's central argument, made in data rather than in a sl
 - `src/domain/mappers.ts` — row ↔ domain mapping, the only place that knows column names.
 - `src/domain/store.ts` — `useDb(selector)` backed by TanStack Query, plus `useService()`
   for the mutations. Pages did not need to know the data moved to Postgres.
-- `src/lib/ai/recommendation.functions.ts` — the LLM adapter contract with a deterministic
-  mock provider; a real provider is selected only when `LLM_API_KEY` is set.
+- `src/domain/agent/prompts.ts` — the prompt contract: what the model is told, including
+  the rules the guard enforces, and few-shot examples from the train split only.
+- `src/domain/agent/model.ts` — what the model may write (`mergeDiagnosis` carries every
+  classification field through untouched) and the Gemini adapter, with the rule-backed
+  text as fallback.
+- `src/lib/ai/gemini.server.ts` — the provider call, structured output, server-only key.
+- `src/lib/ai/recommendation.functions.ts` — the older per-finding suggestion adapter with
+  a deterministic mock provider.
 - `db/supabase/` — schema and the generated seed. `db/mae/` — read-only golden-set RPCs.
 - `scripts/gen_seed_sql.mjs` — regenerates the seed from `src/domain/fixtures.ts`.
 

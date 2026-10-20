@@ -9,6 +9,8 @@ import { z } from "zod";
 
 import type { DataResult } from "./data.functions";
 import { DEFAULT_RUN_OPTIONS, runBuildScan, type StepRecord } from "./agent/harness";
+import { selectAgentModel } from "./agent/model";
+import { PROMPT_VERSION } from "./agent/prompts";
 import { callTool } from "./agent/tools";
 
 const ActorSchema = z.object({
@@ -155,6 +157,12 @@ export const startAgentRun = createServerFn({ method: "POST" })
       const runId = rid("run");
       const scanId = rid("scn-agt");
 
+      // Gemini when a key is present, the rule-backed path otherwise. Either way the
+      // run records which one it used, so no finding is mistaken for model output.
+      const model = await selectAgentModel();
+      const { geminiIsConfigured, geminiModelId } = await import("@/lib/ai/gemini.server");
+      const usingModel = geminiIsConfigured();
+
       const project = unwrap<any[]>(await db.from("app_projects").select("id").limit(1))[0];
       if (!project) return { ok: false, error: "invalid", message: "No project to scan" };
 
@@ -191,6 +199,9 @@ export const startAgentRun = createServerFn({ method: "POST" })
             status: "running",
             scan_id: scanId,
             requested_by: actor.name,
+            provider: usingModel ? "gemini" : "deterministic",
+            model: usingModel ? geminiModelId() : "rule-engine",
+            prompt_version: PROMPT_VERSION,
             step_cap: DEFAULT_RUN_OPTIONS.stepCap,
           })
           .select("id"),
@@ -201,7 +212,7 @@ export const startAgentRun = createServerFn({ method: "POST" })
       const outcome = await runBuildScan(
         runId,
         scanId,
-        { ...DEFAULT_RUN_OPTIONS, journey, platform, buildId, maxScreens, requestedBy: actor.name },
+        { ...DEFAULT_RUN_OPTIONS, journey, platform, buildId, maxScreens, requestedBy: actor.name, model },
         {
           async recordStep(step) {
             buffer.push(step);
@@ -241,7 +252,12 @@ export const startAgentRun = createServerFn({ method: "POST" })
             escalations: outcome.counters.escalations,
             guard_rejections: outcome.counters.rejections,
             halt_reason: outcome.haltReason,
-            summary: { drafts: outcome.drafts, rejected: outcome.rejected },
+            summary: {
+              drafts: outcome.drafts,
+              rejected: outcome.rejected,
+              modelCalls: outcome.counters.modelCalls,
+              modelFallbacks: outcome.counters.modelFallbacks,
+            },
             finished_at: new Date().toISOString(),
           })
           .eq("id", runId)
@@ -274,7 +290,7 @@ export const startAgentRun = createServerFn({ method: "POST" })
           .insert({
             id: rid("aud"),
             actor: "mae-agent",
-            action: `agent.run ${outcome.status} (${outcome.counters.drafted} drafts, ${outcome.counters.rejections} guard rejections, requested by ${actor.name})`,
+            action: `agent.run ${outcome.status} (${outcome.counters.drafted} drafts, ${outcome.counters.rejections} guard rejections, ${outcome.counters.modelCalls} model calls, ${outcome.counters.modelFallbacks} fallbacks, requested by ${actor.name})`,
             entity: "agent_run",
             entity_id: runId,
           })

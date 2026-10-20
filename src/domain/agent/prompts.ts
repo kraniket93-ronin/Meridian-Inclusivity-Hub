@@ -80,16 +80,21 @@ Confidence is a categorical label of evidence strength, never a probability:
 - medium: the evidence is consistent, but an exception or a missing attribute could change it.
 - low: the evidence is insufficient. An abstention_reason is then required.`;
 
-const OUTPUT_FIELDS = `Return one JSON object and nothing else. Fields:
-- title: short, specific, no vendor or brand names.
-- evidence: what was observed, quoting the rule result and any trace or signal given to
-  you. Do not invent an observation that is not in the input.
-- affected_user_need: a need, phrased as a task ("Enter a one-time code with a screen
-  reader"), never a description of a person.
-- user_impact: task_blocked or task_slowed.
-- affected_groups: from the groups named in the input only.
-- confidence and abstention_reason: as defined above.
-- policy_source_ids: only ids marked citable in the input; [] if none are.`;
+const OUTPUT_FIELDS = `Return one JSON object and nothing else, with exactly these four fields:
+- title: short and specific, naming the barrier and the control or step it is on.
+- evidence_context: what the trace and the customer signals add to the rule's own
+  observation. Do NOT restate the observation — it is kept verbatim and yours is
+  appended to it. Do not invent a measurement, a count or a node that is not in the
+  input. If the input adds nothing, return an empty string.
+- affected_user_need: a need phrased as a task the customer is trying to do ("Enter a
+  one-time code with a screen reader"), never a description of a person.
+- description: two or three sentences on what this costs the customer in this journey,
+  for a product manager deciding whether to prioritise it. Use the aggregate signals if
+  they were given to you. Never describe an individual customer.
+
+You do not set the finding type, the criteria, the level, the severity, the confidence,
+the gate or the priority. Those come from the rule engine and are ignored if you send
+them.`;
 
 /* ------------------------------------------------------------------ diagnoser */
 
