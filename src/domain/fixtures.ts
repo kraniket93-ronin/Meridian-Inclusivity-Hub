@@ -663,7 +663,7 @@ export const fixtures: DbState = {
     },
     {
       "id": "aud-FND-0020",
-      "actor": "Aniket Kumar (Demo reviewer)",
+      "actor": "Madhavi Singh (Demo compliance officer)",
       "action": "review.awaiting_compliance",
       "entity": "finding",
       "entityId": "FND-0020",
@@ -671,7 +671,7 @@ export const fixtures: DbState = {
     },
     {
       "id": "aud-FND-0067",
-      "actor": "Aniket Kumar (Demo reviewer)",
+      "actor": "Madhavi Singh (Demo compliance officer)",
       "action": "review.awaiting_compliance",
       "entity": "finding",
       "entityId": "FND-0067",
