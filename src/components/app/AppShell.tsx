@@ -1,4 +1,4 @@
-import { type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   LayoutDashboard,
@@ -12,7 +12,7 @@ import {
   Database,
   Bot,
 } from "lucide-react";
-import { useDb, useCurrentActor, useDataStatus } from "@/domain/store";
+import { useDb, useCurrentActor, useDataStatus, restoreDemoIdentity } from "@/domain/store";
 import { DataStatusNotice } from "@/components/app/DataStatusNotice";
 
 const NAV = [
@@ -30,6 +30,10 @@ const NAV = [
 export function AppShell({ children }: { children: ReactNode }) {
   const actor = useCurrentActor();
   const status = useDataStatus();
+  // After hydration, not during render: the server has no access to browser storage.
+  useEffect(() => {
+    restoreDemoIdentity();
+  }, []);
   const pending = useDb((s) => s.reviewTasks.filter((t) => t.status === "pending").length);
   return (
     <div className="flex min-h-screen">
@@ -69,7 +73,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           ))}
         </nav>
         <div className="border-t border-sidebar-border p-4 text-xs text-sidebar-foreground/80">
-          {actor.isDemo ? "Demo reviewer" : "Signed in as"}
+          {actor.isDemo ? "Demo identity" : "Signed in as"}
           <br />
           <span className="font-medium text-sidebar-foreground">{actor.name}</span>
         </div>

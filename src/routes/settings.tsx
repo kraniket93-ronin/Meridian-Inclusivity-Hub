@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { CURRENT_USER, setCurrentActor, useCurrentActor, useService } from "@/domain/store";
+import { DEMO_USERS, setDemoIdentity, useCurrentActor, useService } from "@/domain/store";
 import type { Role } from "@/domain/types";
 import { PageHeader, Panel } from "@/components/app/ui-bits";
 import { Button } from "@/components/ui/button";
@@ -55,9 +55,28 @@ function Settings() {
         <Panel title="Demo identity and role">
           <p className="text-sm text-muted-foreground">
             Every approval, rejection and verification is written to the database under this name.
-            The prototype has no sign-in: the identity is chosen here so role rules can be
-            demonstrated.
+            The prototype has no sign-in: the person and role are chosen here so a handover
+            between two people, and the role rules, can be demonstrated.
           </p>
+          <div className="mt-4 space-y-2">
+            <Label htmlFor="person">Signed in as</Label>
+            <select
+              id="person"
+              className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm"
+              value={actor.userId ?? DEMO_USERS[0]!.id}
+              onChange={(e) => {
+                const user = DEMO_USERS.find((u) => u.id === e.target.value) ?? DEMO_USERS[0]!;
+                setDemoIdentity(user.id);
+                toast.success(`Signed in as ${user.name}`);
+              }}
+            >
+              {DEMO_USERS.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name} — {u.title}
+                </option>
+              ))}
+            </select>
+          </div>
           <div className="mt-4 space-y-2">
             <Label htmlFor="role">Acting as</Label>
             <select
@@ -66,11 +85,7 @@ function Settings() {
               value={actor.role}
               onChange={(e) => {
                 const role = e.target.value as Role;
-                const name =
-                  role === "reviewer"
-                    ? CURRENT_USER
-                    : `${CURRENT_USER.split(" (")[0]} (Demo ${role})`;
-                setCurrentActor({ name, role, isDemo: true });
+                setDemoIdentity(actor.userId ?? DEMO_USERS[0]!.id, role);
                 toast.success(`Acting as ${role}`);
               }}
             >
