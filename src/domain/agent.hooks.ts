@@ -1,6 +1,9 @@
-// Client-side hooks for the agent: read the run log, start a run, and the three human
-// actions that follow one. Mutations invalidate both the run log and the app state, so
-// a draft promoted here shows up in the Findings Inbox without a reload.
+// React hooks for the agent: read the run log, start a run, and the three human actions
+// that follow one. Mutations invalidate both the run log and the app state, so a draft
+// promoted here shows up in the Findings Inbox without a reload.
+//
+// Not named *.client.ts on purpose: TanStack Start's import protection treats that
+// pattern as client-only and refuses the import from a server-rendered route.
 import { useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";

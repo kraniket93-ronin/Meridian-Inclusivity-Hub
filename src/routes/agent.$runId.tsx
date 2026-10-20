@@ -2,7 +2,7 @@ import { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 
-import { useAgentRun, useAgentService, type AgentStep } from "@/domain/agent.client";
+import { useAgentRun, useAgentService, type AgentStep } from "@/domain/agent.hooks";
 import { useCurrentActor } from "@/domain/store";
 import { EmptyState, ErrorState, PageHeader, Panel, StatusBadge, fmtDate } from "@/components/app/ui-bits";
 import { Button } from "@/components/ui/button";
