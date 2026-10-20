@@ -44,7 +44,7 @@ function AgentRuns() {
   const [journey, setJourney] = useState<(typeof JOURNEYS)[number]["value"]>("onboarding");
   const [platform, setPlatform] = useState<(typeof PLATFORMS)[number]["value"]>("android");
   const [buildId, setBuildId] = useState<string>("v3");
-  const [maxScreens, setMaxScreens] = useState(6);
+  const [maxScreens, setMaxScreens] = useState(2);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
 
@@ -145,8 +145,9 @@ function AgentRuns() {
             </Button>
           </form>
           <p className="mt-3 text-xs text-muted-foreground">
-            Capped at 140 steps and 120 seconds. Every tool call, model output and guard verdict is written to
-            the run log before anything is drafted.
+            Capped at 140 steps, and at 45 seconds when a hosted model is writing (it is the round trips that
+            cost, and this runs inside a serverless function). A run that reaches a cap halts and says which.
+            Every tool call, model output and guard verdict is written to the run log before anything is drafted.
           </p>
           {error && (
             <div className="mt-3">

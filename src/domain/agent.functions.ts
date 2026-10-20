@@ -212,7 +212,18 @@ export const startAgentRun = createServerFn({ method: "POST" })
       const outcome = await runBuildScan(
         runId,
         scanId,
-        { ...DEFAULT_RUN_OPTIONS, journey, platform, buildId, maxScreens, requestedBy: actor.name, model },
+        {
+          ...DEFAULT_RUN_OPTIONS,
+          journey,
+          platform,
+          buildId,
+          maxScreens,
+          requestedBy: actor.name,
+          model,
+          // A model run spends its time waiting on round trips, and this handler is a
+          // serverless function with a wall-clock limit. It halts cleanly and says so.
+          timeBudgetMs: usingModel ? 45_000 : DEFAULT_RUN_OPTIONS.timeBudgetMs,
+        },
         {
           async recordStep(step) {
             buffer.push(step);

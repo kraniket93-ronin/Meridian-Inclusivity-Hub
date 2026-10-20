@@ -9,7 +9,24 @@
 // The model id is an environment variable because model names move: a stale default is
 // then one variable away from fixed, not a redeploy of changed code.
 const ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/interactions";
-const DEFAULT_MODEL = "gemini-3.6-flash";
+const DEFAULT_MODEL = "gemini-3-flash-preview";
+
+/**
+ * Tried in order when the chosen model answers "high demand" (503). Capacity moves
+ * hour to hour, and a demo should not die because one model is busy. Override with
+ * GEMINI_MODEL_FALLBACKS as a comma-separated list.
+ */
+// One alternate only. Walking a long chain on a busy model costs more wall clock than
+// the answer is worth, and the rule-backed text is always there to fall back to.
+const DEFAULT_FALLBACKS = ["gemini-3.6-flash"];
+
+function fallbackModels(primary: string): string[] {
+  const configured = process.env["GEMINI_MODEL_FALLBACKS"];
+  const list = configured ? configured.split(",").map((m) => m.trim()).filter(Boolean) : DEFAULT_FALLBACKS;
+  return list.filter((m) => m !== primary);
+}
+
+const RETRYABLE = /service_unavailable|high demand|overloaded|resource_exhausted|^http_(429|500|502|503|504)/i;
 
 export interface GeminiRequest {
   system: string;
@@ -55,14 +72,14 @@ function extractText(payload: Record<string, unknown>): string | null {
   return null;
 }
 
-export async function callGemini(request: GeminiRequest): Promise<GeminiResult> {
+/** One attempt against one model. */
+async function callOnce(request: GeminiRequest, model: string): Promise<GeminiResult> {
   const started = Date.now();
-  const model = geminiModelId();
   const key = process.env["GEMINI_API_KEY"] ?? process.env["LLM_API_KEY"];
   if (!key) return { ok: false, error: "not_configured", model, latencyMs: 0 };
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), request.timeoutMs ?? 25_000);
+  const timeout = setTimeout(() => controller.abort(), request.timeoutMs ?? 12_000);
   try {
     const response = await fetch(ENDPOINT, {
       method: "POST",
@@ -78,7 +95,9 @@ export async function callGemini(request: GeminiRequest): Promise<GeminiResult> 
           schema: request.schema,
         },
         generation_config: {
-          max_output_tokens: request.maxOutputTokens ?? 900,
+          // Thinking tokens come out of this budget, so a tight limit returns
+          // status "incomplete" with a truncated body rather than an error.
+          max_output_tokens: request.maxOutputTokens ?? 1600,
           thinking_level: "low",
         },
       }),
@@ -113,4 +132,24 @@ export async function callGemini(request: GeminiRequest): Promise<GeminiResult> 
   } finally {
     clearTimeout(timeout);
   }
+}
+
+/**
+ * Calls the configured model, then its fallbacks if it reports high demand. Returns the
+ * first usable answer, or the last error so the caller can record why it fell back.
+ */
+export async function callGemini(request: GeminiRequest): Promise<GeminiResult> {
+  const primary = geminiModelId();
+  if (!geminiIsConfigured()) {
+    return { ok: false, error: "not_configured", model: primary, latencyMs: 0 };
+  }
+
+  let last: GeminiResult = { ok: false, error: "no_attempt", model: primary, latencyMs: 0 };
+  for (const model of [primary, ...fallbackModels(primary)]) {
+    const result = await callOnce(request, model);
+    if (result.ok) return result;
+    last = result;
+    if (!RETRYABLE.test(result.error)) break;
+  }
+  return last;
 }

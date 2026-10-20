@@ -102,6 +102,25 @@ export interface Harness {
  * The build-scan plan: steps → rule checks → simulation → signals → findings → guards →
  * drafts. Each phase is capped, and nothing proceeds on a failed guard.
  */
+/**
+ * Runs `fn` over the items with at most `limit` in flight. Concurrency here is a
+ * trade, not a win: more at once is faster until the provider's per-minute limit
+ * turns the extra calls into 429s and the run falls back to rule-backed text.
+ */
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
+    while (true) {
+      const index = next++;
+      if (index >= items.length) return;
+      out[index] = await fn(items[index]!);
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
 export async function runBuildScan(
   runId: string,
   scanId: string,
@@ -269,34 +288,63 @@ export async function runBuildScan(
         signalCache.set(screen.stepNo, signals.ok ? (signals.output as SignalSummary) : null);
       }
 
-      for (const rule of results) {
+      // Every rule on this screen is prepared at once. The model calls dominate the
+      // wall clock, and a serverless function has a limit to stay inside; the results
+      // are then logged in rule order, so the run log still reads top to bottom.
+      // One rule at a time, its two model calls together: two requests in flight is
+      // what a free-tier key tolerates without returning 429.
+      const prepared = await mapWithConcurrency(results, 1, async (rule) => {
+          const policy = await callTool("search_policy", { keys: rule.citationKeys }, "diagnoser");
+          toolCalls += 1;
+          const chunks = policy.ok ? ((policy.output as { chunks: PolicyChunk[] }).chunks ?? []) : [];
+          const ruleFix = remediate(rule.ruleId);
+          const [remediation, diagnosis] = await Promise.all([
+            options.model.remediate(
+              {
+                rule,
+                screenId: screen.screenId,
+                stepName: screen.stepName,
+                platform: options.platform,
+                fallback: ruleFix,
+              },
+              fewShot,
+            ),
+            options.model.diagnose(
+              {
+                rule,
+                screenId: screen.screenId,
+                journey: options.journey,
+                stepNo: screen.stepNo,
+                stepName: screen.stepName,
+                platform: options.platform,
+                signals: signalCache.get(screen.stepNo) ?? null,
+                trace,
+                chunks,
+              },
+              fewShot,
+            ),
+          ]);
+          return { rule, chunks, policy, ruleFix, remediation, diagnosis };
+      });
+
+      for (const { rule, chunks, policy, ruleFix, remediation, diagnosis } of prepared) {
         if (capHit()) {
           halted = seq >= options.stepCap ? "Step cap reached" : "Time budget reached";
           break;
         }
 
-        // Policy chunks for exactly the criteria in play — a lookup, not a search.
-        const policy = await call(
-          "search_policy",
-          { keys: rule.citationKeys },
-          "diagnoser",
-          "diagnose",
-          `Policy sources for ${rule.citationKeys.join(", ")}`,
-        );
-        const chunks = policy.ok ? ((policy.output as { chunks: PolicyChunk[] }).chunks ?? []) : [];
+        await log({
+          phase: "diagnose",
+          actor: "diagnoser",
+          tool: "search_policy",
+          summary: `Policy sources for ${rule.citationKeys.join(", ")}`,
+          input: { keys: rule.citationKeys },
+          output: policy.ok ? policy.output : null,
+          verdict: policy.ok ? "ok" : "error",
+          message: policy.error ?? null,
+          durationMs: policy.durationMs,
+        });
 
-        // Remediator: the model refines the rule-backed fix, or the rule-backed fix stands.
-        const ruleFix = remediate(rule.ruleId);
-        const remediation = await options.model.remediate(
-          {
-            rule,
-            screenId: screen.screenId,
-            stepName: screen.stepName,
-            platform: options.platform,
-            fallback: ruleFix,
-          },
-          fewShot,
-        );
         modelCalls += remediation.meta.provider === "deterministic" ? 0 : 1;
         if (remediation.meta.fellBackBecause) modelFallbacks += 1;
         const fix = remediation.output ? mergeRemediation(ruleFix, remediation.output) : ruleFix;
@@ -326,22 +374,8 @@ export async function runBuildScan(
           fix,
         });
 
-        // Diagnoser: the model writes the narrative. mergeDiagnosis carries every
+        // Diagnoser: the model wrote the narrative. mergeDiagnosis carries every
         // classification field through untouched, whatever the model returned.
-        const diagnosis = await options.model.diagnose(
-          {
-            rule,
-            screenId: screen.screenId,
-            journey: options.journey,
-            stepNo: screen.stepNo,
-            stepName: screen.stepName,
-            platform: options.platform,
-            signals: signalCache.get(screen.stepNo) ?? null,
-            trace,
-            chunks,
-          },
-          fewShot,
-        );
         modelCalls += diagnosis.meta.provider === "deterministic" ? 0 : 1;
         if (diagnosis.meta.fellBackBecause) modelFallbacks += 1;
         const draft: FindingDraft = diagnosis.output
