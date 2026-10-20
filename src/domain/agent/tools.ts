@@ -9,6 +9,7 @@
 import { z } from "zod";
 
 import { runRules, type RuleResult, type ScreenRecord } from "./rules";
+import { FEW_SHOT_SPLIT, selectFewShot, type FewShotExample } from "./prompts";
 
 /* ------------------------------------------------------------------ plumbing */
 
@@ -60,6 +61,10 @@ export const ToolInputs = {
     stepNo: z.number().int().min(1).max(20).optional(),
   }),
   search_policy: z.object({ keys: z.array(z.string().trim().max(40)).min(1).max(8) }),
+  get_training_examples: z.object({
+    findingType: z.string().trim().max(40).optional(),
+    limit: z.number().int().min(1).max(5).default(3),
+  }),
   draft_finding: z.object({
     runId: z.string().trim().min(3).max(60),
     scanId: z.string().trim().min(3).max(60),
@@ -120,6 +125,13 @@ export const TOOLS: Record<ToolName, ToolSpec> = {
   search_policy: {
     name: "search_policy",
     description: "Policy chunks for WCAG criteria or topics, with their verification status.",
+    writes: false,
+    allowedFor: ["diagnoser", "remediator"],
+  },
+  get_training_examples: {
+    name: "get_training_examples",
+    description:
+      "Worked findings from the TRAIN split only, for few-shot prompting. Never returns dev or test rows.",
     writes: false,
     allowedFor: ["diagnoser", "remediator"],
   },
@@ -331,6 +343,35 @@ export const handlers: { [K in ToolName]: (input: z.infer<(typeof ToolInputs)[K]
         citable: Boolean(c.approved_for_answers),
       })),
     };
+  },
+
+  async get_training_examples({ findingType, limit }) {
+    const client = await db();
+    let query = client
+      .from("benchmark_records")
+      .select("record")
+      .eq("table_name", "expected_findings")
+      .eq("record->>split_group", FEW_SHOT_SPLIT);
+    if (findingType) query = query.eq("record->>finding_type", findingType);
+    const rows = asRecords(unwrap<Row[]>(await query.limit(20)));
+    const examples: FewShotExample[] = rows.map((r) => ({
+      findingId: String(r.finding_id),
+      splitGroup: String(r.split_group),
+      findingType: String(r.finding_type),
+      title: String(r.title ?? ""),
+      evidence: String(r.description ?? r.evidence_refs ?? ""),
+      affectedUserNeed: String(r.affected_user_need ?? ""),
+      recommendedFix: String(r.recommended_fix ?? ""),
+      fixRationale: String(r.fix_rationale ?? ""),
+      verificationSteps: String(r.verification_steps ?? ""),
+      abstentionReason: r.abstention_reason ? String(r.abstention_reason) : null,
+      confidence: String(r.confidence ?? ""),
+      gate: String(r.release_gate_recommendation ?? ""),
+    }));
+    // Filtered at the query and again here: a dev or test row reaching a prompt would
+    // quietly invalidate every score the agent reports afterwards.
+    const selected = selectFewShot(examples, limit);
+    return { split: FEW_SHOT_SPLIT, requested: limit, examples: selected, ids: selected.map((e) => e.findingId) };
   },
 
   async draft_finding({ runId, scanId, screenId, payload }) {
