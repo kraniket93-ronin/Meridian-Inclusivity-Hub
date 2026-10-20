@@ -10,12 +10,14 @@ import {
   Settings,
   Compass,
   Database,
+  Bot,
 } from "lucide-react";
 import { useDb, useCurrentActor, useDataStatus } from "@/domain/store";
 import { DataStatusNotice } from "@/components/app/DataStatusNotice";
 
 const NAV = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/agent", label: "Agent runs", icon: Bot },
   { to: "/scans", label: "Scans", icon: Radar },
   { to: "/findings", label: "Findings Inbox", icon: Inbox },
   { to: "/review", label: "Review Queue", icon: ClipboardCheck },

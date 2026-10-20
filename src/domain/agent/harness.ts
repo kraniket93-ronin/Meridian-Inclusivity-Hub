@@ -20,11 +20,13 @@ export interface RunOptions {
   timeBudgetMs: number;
 }
 
+// Sized so a six-screen journey finishes inside the caps; the caps still bind, and a run
+// that hits one halts and says which.
 export const DEFAULT_RUN_OPTIONS: Omit<RunOptions, "journey" | "platform" | "requestedBy"> = {
   buildId: "v3",
   maxScreens: 6,
-  stepCap: 60,
-  timeBudgetMs: 90_000,
+  stepCap: 140,
+  timeBudgetMs: 120_000,
 };
 
 export interface StepRecord {

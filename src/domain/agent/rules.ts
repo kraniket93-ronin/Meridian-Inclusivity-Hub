@@ -77,7 +77,11 @@ export interface RuleResult {
 const yes = (v: unknown) => String(v ?? "").trim().toUpperCase() === "Y";
 const no = (v: unknown) => String(v ?? "").trim().toUpperCase() === "N";
 const num = (v: unknown): number | null => {
-  const n = Number(String(v ?? "").trim());
+  // An empty cell means "not recorded", not zero. Number("") is 0, which would have the
+  // timeout rule reporting "expires after 0 seconds" on every screen without an OTP.
+  const raw = String(v ?? "").trim();
+  if (!raw) return null;
+  const n = Number(raw);
   return Number.isFinite(n) ? n : null;
 };
 const list = (v: unknown): string[] => {

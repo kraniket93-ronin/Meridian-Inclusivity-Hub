@@ -15,6 +15,8 @@ import { Route as EvaluationRouteImport } from './routes/evaluation'
 import { Route as ReviewRouteImport } from './routes/review'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as VerificationRouteImport } from './routes/verification'
+import { Route as AgentIndexRouteImport } from './routes/agent.index'
+import { Route as AgentRunIdRouteImport } from './routes/agent.$runId'
 import { Route as FindingsIndexRouteImport } from './routes/findings.index'
 import { Route as FindingsFindingIdRouteImport } from './routes/findings.$findingId'
 import { Route as ScansIndexRouteImport } from './routes/scans.index'
@@ -50,6 +52,16 @@ const VerificationRoute = VerificationRouteImport.update({
   path: '/verification',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AgentIndexRoute = AgentIndexRouteImport.update({
+  id: '/agent/',
+  path: '/agent/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AgentRunIdRoute = AgentRunIdRouteImport.update({
+  id: '/agent/$runId',
+  path: '/agent/$runId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const FindingsIndexRoute = FindingsIndexRouteImport.update({
   id: '/findings/',
   path: '/findings/',
@@ -78,8 +90,10 @@ export interface FileRoutesByFullPath {
   '/review': typeof ReviewRoute
   '/settings': typeof SettingsRoute
   '/verification': typeof VerificationRoute
+  '/agent/$runId': typeof AgentRunIdRoute
   '/findings/$findingId': typeof FindingsFindingIdRoute
   '/scans/$scanId': typeof ScansScanIdRoute
+  '/agent/': typeof AgentIndexRoute
   '/findings/': typeof FindingsIndexRoute
   '/scans/': typeof ScansIndexRoute
 }
@@ -90,8 +104,10 @@ export interface FileRoutesByTo {
   '/review': typeof ReviewRoute
   '/settings': typeof SettingsRoute
   '/verification': typeof VerificationRoute
+  '/agent/$runId': typeof AgentRunIdRoute
   '/findings/$findingId': typeof FindingsFindingIdRoute
   '/scans/$scanId': typeof ScansScanIdRoute
+  '/agent': typeof AgentIndexRoute
   '/findings': typeof FindingsIndexRoute
   '/scans': typeof ScansIndexRoute
 }
@@ -103,8 +119,10 @@ export interface FileRoutesById {
   '/review': typeof ReviewRoute
   '/settings': typeof SettingsRoute
   '/verification': typeof VerificationRoute
+  '/agent/$runId': typeof AgentRunIdRoute
   '/findings/$findingId': typeof FindingsFindingIdRoute
   '/scans/$scanId': typeof ScansScanIdRoute
+  '/agent/': typeof AgentIndexRoute
   '/findings/': typeof FindingsIndexRoute
   '/scans/': typeof ScansIndexRoute
 }
@@ -117,8 +135,10 @@ export interface FileRouteTypes {
     | '/review'
     | '/settings'
     | '/verification'
+    | '/agent/$runId'
     | '/findings/$findingId'
     | '/scans/$scanId'
+    | '/agent/'
     | '/findings/'
     | '/scans/'
   fileRoutesByTo: FileRoutesByTo
@@ -129,8 +149,10 @@ export interface FileRouteTypes {
     | '/review'
     | '/settings'
     | '/verification'
+    | '/agent/$runId'
     | '/findings/$findingId'
     | '/scans/$scanId'
+    | '/agent'
     | '/findings'
     | '/scans'
   id:
@@ -141,8 +163,10 @@ export interface FileRouteTypes {
     | '/review'
     | '/settings'
     | '/verification'
+    | '/agent/$runId'
     | '/findings/$findingId'
     | '/scans/$scanId'
+    | '/agent/'
     | '/findings/'
     | '/scans/'
   fileRoutesById: FileRoutesById
@@ -154,8 +178,10 @@ export interface RootRouteChildren {
   ReviewRoute: typeof ReviewRoute
   SettingsRoute: typeof SettingsRoute
   VerificationRoute: typeof VerificationRoute
+  AgentRunIdRoute: typeof AgentRunIdRoute
   FindingsFindingIdRoute: typeof FindingsFindingIdRoute
   ScansScanIdRoute: typeof ScansScanIdRoute
+  AgentIndexRoute: typeof AgentIndexRoute
   FindingsIndexRoute: typeof FindingsIndexRoute
   ScansIndexRoute: typeof ScansIndexRoute
 }
@@ -204,6 +230,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof VerificationRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/agent/': {
+      id: '/agent/'
+      path: '/agent'
+      fullPath: '/agent/'
+      preLoaderRoute: typeof AgentIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/agent/$runId': {
+      id: '/agent/$runId'
+      path: '/agent/$runId'
+      fullPath: '/agent/$runId'
+      preLoaderRoute: typeof AgentRunIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/findings/': {
       id: '/findings/'
       path: '/findings'
@@ -242,8 +282,10 @@ const rootRouteChildren: RootRouteChildren = {
   ReviewRoute: ReviewRoute,
   SettingsRoute: SettingsRoute,
   VerificationRoute: VerificationRoute,
+  AgentRunIdRoute: AgentRunIdRoute,
   FindingsFindingIdRoute: FindingsFindingIdRoute,
   ScansScanIdRoute: ScansScanIdRoute,
+  AgentIndexRoute: AgentIndexRoute,
   FindingsIndexRoute: FindingsIndexRoute,
   ScansIndexRoute: ScansIndexRoute,
 }
